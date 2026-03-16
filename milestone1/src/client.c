@@ -31,7 +31,7 @@ int main()
     // Define server address
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(PORT);
-    server_address.sin_addr.s_addr = INADDR_ANY;
+    inet_pton(AF_INET, "127.0.0.1", &server_address.sin_addr);
 
     // Connect to server
     if (connect(sock, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
@@ -50,8 +50,10 @@ int main()
 
     // Receive authentication response
     memset(auth_response, 0, sizeof(auth_response));
-    recv_bytes = read(sock, auth_response, sizeof(auth_response));
-    auth_response[recv_bytes] = '\0';
+    recv_bytes = read(sock, auth_response, sizeof(auth_response) - 1);
+    if (recv_bytes > 0 && recv_bytes < sizeof(auth_response)) {
+        auth_response[recv_bytes] = '\0';
+    }
 
     if (strcmp(auth_response, "AUTH_OK") == 0) {
         printf("Authentication successful\n");
@@ -73,10 +75,14 @@ int main()
     send(sock, encrypted_message, message_len, 0);
 
     // Receive and decrypt response from server
-    memset(buffer, 0, BUFFER_SIZE);
-    memset(decrypted_buffer, 0, BUFFER_SIZE);
-    recv_bytes = read(sock, buffer, BUFFER_SIZE);
+    memset(buffer, 0, BUFFER_SIZE); - 1);
 
+    if (recv_bytes > 0) {
+        decrypt_message(buffer, psk, decrypted_buffer, recv_bytes);
+        if (recv_bytes < BUFFER_SIZE) {
+            decrypted_buffer[recv_bytes] = '\0';
+        }
+    }
     decrypt_message(buffer, psk, decrypted_buffer, recv_bytes);
     decrypted_buffer[recv_bytes] = '\0';
     printf("Server: %s\n", decrypted_buffer);

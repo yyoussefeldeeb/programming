@@ -62,8 +62,10 @@ int main()
     // Phase 1: Authentication
     printf("\n--- Authentication Phase ---\n");
     memset(buffer, 0, BUFFER_SIZE);
-    recv_bytes = read(new_socket, buffer, BUFFER_SIZE);
-    buffer[recv_bytes] = '\0';
+    recv_bytes = read(new_socket, buffer, BUFFER_SIZE - 1);
+    if (recv_bytes > 0 && recv_bytes < BUFFER_SIZE) {
+        buffer[recv_bytes] = '\0';
+    }
     printf("Received PSK from client\n");
 
     auth_result = authenticate_psk((char *)buffer, psk);
@@ -82,10 +84,14 @@ int main()
     printf("\n--- Communication Phase ---\n");
     memset(buffer, 0, BUFFER_SIZE);
     memset(decrypted_buffer, 0, BUFFER_SIZE);
-    recv_bytes = read(new_socket, buffer, BUFFER_SIZE);
+    recv_bytes = read(new_socket, buffer, BUFFER_SIZE - 1);
 
-    decrypt_message(buffer, psk, decrypted_buffer, recv_bytes);
-    decrypted_buffer[recv_bytes] = '\0';
+    if (recv_bytes > 0) {
+        decrypt_message(buffer, psk, decrypted_buffer, recv_bytes);
+        if (recv_bytes < BUFFER_SIZE) {
+            decrypted_buffer[recv_bytes] = '\0';
+        }
+    }
     printf("Client: %s\n", decrypted_buffer);
 
     // Prepare and send encrypted response
