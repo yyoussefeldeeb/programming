@@ -21,19 +21,19 @@ int main()
     int recv_bytes;
     char auth_response[20] = {0};
 
-    // Create socket
+    // Make a socket to talk to server
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         perror("Socket failed");
         exit(EXIT_FAILURE);
     }
 
-    // Define server address
+    // Tell socket where the server is
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(PORT);
     inet_pton(AF_INET, "127.0.0.1", &server_address.sin_addr);
 
-    // Connect to server
+    // Connect to the server
     if (connect(sock, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
         perror("Connection failed");
         exit(EXIT_FAILURE);
@@ -43,12 +43,12 @@ int main()
 
     psk = get_default_psk();
 
-    // Phase 1: Send PSK for authentication
+    // Send the password to server so they know who we are
     printf("\n--- Authentication Phase ---\n");
     send(sock, psk, strlen(psk), 0);
     printf("Sent PSK to server\n");
 
-    // Receive authentication response
+    // Listen for server to say if password is right
     memset(auth_response, 0, sizeof(auth_response));
     recv_bytes = read(sock, auth_response, sizeof(auth_response) - 1);
     if (recv_bytes > 0 && recv_bytes < sizeof(auth_response)) {
@@ -63,7 +63,7 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    // Phase 2: Send encrypted message
+    // Send secret message to server
     printf("\n--- Communication Phase ---\n");
     strcpy(message, "Hello from secure client");
     size_t message_len = strlen(message);
@@ -74,20 +74,19 @@ int main()
     printf("Sending: %s\n", message);
     send(sock, encrypted_message, message_len, 0);
 
-    // Receive and decrypt response from server
-    memset(buffer, 0, BUFFER_SIZE); - 1);
+    // Get and decode the response from server
+    memset(buffer, 0, BUFFER_SIZE);
+    recv_bytes = read(sock, buffer, BUFFER_SIZE - 1);
 
     if (recv_bytes > 0) {
         decrypt_message(buffer, psk, decrypted_buffer, recv_bytes);
         if (recv_bytes < BUFFER_SIZE) {
             decrypted_buffer[recv_bytes] = '\0';
         }
+        printf("Server: %s\n", decrypted_buffer);
     }
-    decrypt_message(buffer, psk, decrypted_buffer, recv_bytes);
-    decrypted_buffer[recv_bytes] = '\0';
-    printf("Server: %s\n", decrypted_buffer);
 
-    // Close socket
+    // Bye bye socket
     close(sock);
 
     return 0;
