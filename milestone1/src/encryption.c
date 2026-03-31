@@ -88,4 +88,13 @@ void decrypt_message(const unsigned char *ciphertext, const char *key,
     // copy to plaintext and null terminate
     memcpy(plaintext, decrypted, len);
     plaintext[len] = '\0';
+    
+    // strip the padding spaces from the end
+    for (int i = len - 1; i >= 0; i--) {
+        if (plaintext[i] == ' ') {
+            plaintext[i] = '\0';
+        } else {
+            break;
+        }
+    }
 }
