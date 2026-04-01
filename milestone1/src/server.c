@@ -14,6 +14,9 @@
 #define MEDIUM_PORT 9002
 #define TOP_PORT 9003
 
+// forward declaration
+void *handle_client(void *arg);
+
 // info for port listener thread
 struct port_listener {
     int port;
