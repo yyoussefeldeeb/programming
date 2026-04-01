@@ -7,21 +7,110 @@
 #include "../include/auth.h"
 #include "../include/encryption.h"
 
-#define PORT 8080
 #define BUFFER_SIZE 1024
 
-// container to pass stuff to thread
-struct client_info {
-    int socket;
-    const char *psk;
+// ports for different levels
+#define ENTRY_PORT 9001
+#define MEDIUM_PORT 9002
+#define TOP_PORT 9003
+
+// info for port listener thread
+struct port_listener {
+    int port;
+    const char *level_name;
 };
 
-// this is what a thread does when a client connects
+// info for client handler thread
+struct client_info {
+    int socket;
+    const char *password;
+    const char *username;
+    const char *role;
+    int port;
+};
+
+// this thread listens on a specific port for clients
+void *listen_on_port(void *arg)
+{
+    struct port_listener *listener = (struct port_listener *)arg;
+    int port = listener->port;
+    const char *level_name = listener->level_name;
+    
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int addrlen = sizeof(address);
+
+    // Make socket for this port
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd == 0) {
+        perror("Socket failed");
+        pthread_exit(NULL);
+    }
+
+    // Set up address
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+
+    // Stick socket to port
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("Bind failed");
+        close(server_fd);
+        pthread_exit(NULL);
+    }
+
+    // Wait for clients
+    if (listen(server_fd, 5) < 0) {
+        perror("Listen failed");
+        close(server_fd);
+        pthread_exit(NULL);
+    }
+
+    printf("Server listening on port %d (%s level)...\n", port, level_name);
+
+    // accept clients on this port forever
+    while (1) {
+        new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+        if (new_socket < 0) {
+            perror("Accept failed");
+            continue;
+        }
+
+        printf("\nNew connection on port %d\n", port);
+
+        // spawn thread to handle this client
+        pthread_t client_thread;
+        struct client_info *client_data = (struct client_info *)malloc(sizeof(struct client_info));
+        if (client_data == NULL) {
+            perror("Memory allocation failed");
+            close(new_socket);
+            continue;
+        }
+        
+        client_data->socket = new_socket;
+        client_data->port = port;
+
+        if (pthread_create(&client_thread, NULL, handle_client, (void *)client_data) != 0) {
+            perror("Thread creation failed");
+            free(client_data);
+            close(new_socket);
+            continue;
+        }
+        
+        pthread_detach(client_thread);
+    }
+
+    close(server_fd);
+    free(listener);
+    return NULL;
+}
+
+// handle a single client
 void *handle_client(void *arg)
 {
     struct client_info *info = (struct client_info *)arg;
     int client_socket = info->socket;
-    const char *psk = info->psk;
+    int port = info->port;
     
     unsigned char buffer[BUFFER_SIZE] = {0};
     char decrypted_buffer[BUFFER_SIZE] = {0};
@@ -29,22 +118,30 @@ void *handle_client(void *arg)
     unsigned char encrypted_response[BUFFER_SIZE] = {0};
     int recv_bytes;
     int auth_result;
+    char username[64] = {0};
+    char password[64] = {0};
+    char role[64] = {0};
 
     // Check if they know the password
-    printf("\n--- Authentication Phase ---\n");
+    printf("\n--- Authentication Phase (Port %d) ---\n", port);
     memset(buffer, 0, BUFFER_SIZE);
     recv_bytes = read(client_socket, buffer, BUFFER_SIZE - 1);
     if (recv_bytes > 0 && recv_bytes < BUFFER_SIZE) {
         buffer[recv_bytes] = '\0';
     }
-    printf("Received PSK from client\n");
 
-    auth_result = authenticate_psk((char *)buffer, psk);
+    // parse username:password from buffer
+    if (sscanf((char *)buffer, "%63[^:]:%63s", username, password) == 2) {
+        printf("Received login: %s\n", username);
+    }
+
+    // authenticate from users.txt
+    auth_result = authenticate_user(username, password, role);
     if (auth_result) {
-        printf("Client authenticated successfully\n");
+        printf("%s (%s level) logged in on port %d\n", username, role, port);
         send(client_socket, "AUTH_OK", 7, 0);
     } else {
-        printf("Authentication failed\n");
+        printf("Authentication failed for user: %s\n", username);
         send(client_socket, "AUTH_FAIL", 9, 0);
         close(client_socket);
         free(info);
@@ -58,7 +155,7 @@ void *handle_client(void *arg)
     recv_bytes = read(client_socket, buffer, BUFFER_SIZE - 1);
 
     if (recv_bytes > 0) {
-        decrypt_message(buffer, psk, decrypted_buffer, recv_bytes);
+        decrypt_message(buffer, password, decrypted_buffer, recv_bytes);
         if (recv_bytes < BUFFER_SIZE) {
             decrypted_buffer[recv_bytes] = '\0';
         }
@@ -68,15 +165,16 @@ void *handle_client(void *arg)
     // Send back a secret message
     strcpy(response, "Hello from secure server");
     size_t response_len = strlen(response);
+    // calculate padded length (must be multiple of 16)
+    size_t padded_len = ((response_len + 15) / 16) * 16;
 
     memset(encrypted_response, 0, BUFFER_SIZE);
-    encrypt_message(response, psk, encrypted_response, response_len);
+    encrypt_message(response, password, encrypted_response);
 
-    send(client_socket, encrypted_response, response_len, 0);
+    send(client_socket, encrypted_response, padded_len, 0);
 
     // Close this client connection
     close(client_socket);
-    // don't forget to free the thing we allocated
     free(info);
     
     return NULL;
@@ -84,76 +182,30 @@ void *handle_client(void *arg)
 
 int main()
 {
-    int server_fd, new_socket;
-    struct sockaddr_in address;
-    int addrlen = sizeof(address);
-    pthread_t thread_id;
-    const char *psk;
+    pthread_t entry_thread, medium_thread, top_thread;
 
-    // Make socket
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd == 0) {
-        perror("Socket failed");
-        exit(EXIT_FAILURE);
-    }
+    // create thread for each port level
+    struct port_listener *entry_listener = (struct port_listener *)malloc(sizeof(struct port_listener));
+    entry_listener->port = ENTRY_PORT;
+    entry_listener->level_name = "entry";
+    pthread_create(&entry_thread, NULL, listen_on_port, (void *)entry_listener);
 
-    // Set up address so we can listen
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    struct port_listener *medium_listener = (struct port_listener *)malloc(sizeof(struct port_listener));
+    medium_listener->port = MEDIUM_PORT;
+    medium_listener->level_name = "medium";
+    pthread_create(&medium_thread, NULL, listen_on_port, (void *)medium_listener);
 
-    // Stick the socket to a port
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        perror("Bind failed");
-        exit(EXIT_FAILURE);
-    }
+    struct port_listener *top_listener = (struct port_listener *)malloc(sizeof(struct port_listener));
+    top_listener->port = TOP_PORT;
+    top_listener->level_name = "top";
+    pthread_create(&top_thread, NULL, listen_on_port, (void *)top_listener);
 
-    // Wait for someone to connect
-    if (listen(server_fd, 3) < 0) {
-        perror("Listen failed");
-        exit(EXIT_FAILURE);
-    }
+    printf("=== Secure Server Started ===\n");
 
-    printf("Server listening on port %d...\n", PORT);
-    
-    psk = get_default_psk();
-
-    // loop forever accepting clients
-    while (1) {
-        // Accept when a client comes in
-        new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
-        if (new_socket < 0) {
-            perror("Accept failed");
-            continue;
-        }
-
-        printf("Client connected\n");
-
-        // make a container for the client info
-        struct client_info *client_data = (struct client_info *)malloc(sizeof(struct client_info));
-        if (client_data == NULL) {
-            perror("Memory allocation failed");
-            close(new_socket);
-            continue;
-        }
-        
-        client_data->socket = new_socket;
-        client_data->psk = psk;
-
-        // spawn a thread to handle this client
-        if (pthread_create(&thread_id, NULL, handle_client, (void *)client_data) != 0) {
-            perror("Thread creation failed");
-            free(client_data);
-            close(new_socket);
-            continue;
-        }
-        
-        // don't wait for thread to finish, next client can connect while this one talks
-        pthread_detach(thread_id);
-    }
-
-    // Put main socket away
-    close(server_fd);
+    // wait for all threads (they run forever)
+    pthread_join(entry_thread, NULL);
+    pthread_join(medium_thread, NULL);
+    pthread_join(top_thread, NULL);
 
     return 0;
 }

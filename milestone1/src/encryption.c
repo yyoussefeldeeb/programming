@@ -38,7 +38,7 @@ static int pad_message(const char *plaintext, unsigned char *padded)
 // encrypt stuff
 // just loop through the message in 16 byte chunks and encrypt each one
 void encrypt_message(const char *plaintext, const char *key, 
-                     unsigned char *ciphertext, size_t len)
+                     unsigned char *ciphertext)
 {
     if (plaintext == NULL || key == NULL || ciphertext == NULL) {
         return;

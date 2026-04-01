@@ -1,0 +1,5 @@
+user1:pass1:entry
+user2:pass2:entry
+user3:pass3:medium
+user4:pass4:medium
+user5:pass5:top
