@@ -162,7 +162,7 @@ void *handle_client(void *arg)
         if (recv_bytes < BUFFER_SIZE) {
             decrypted_buffer[recv_bytes] = '\0';
         }
-        printf("Client: %s\n", decrypted_buffer);
+        printf("%s: %s\n", username, decrypted_buffer);
     }
 
     // Send back a secret message

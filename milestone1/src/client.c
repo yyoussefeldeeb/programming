@@ -95,7 +95,10 @@ int main()
 
     // Send secret message to server
     printf("\n--- Communication Phase ---\n");
-    strcpy(message, "Hello from secure client");
+    printf("Enter your message: ");
+    fgets(message, sizeof(message), stdin);
+    message[strcspn(message, "\n")] = 0; // remove newline
+    
     size_t message_len = strlen(message);
     // calculate padded length (must be multiple of 16)
     size_t padded_len = ((message_len + 15) / 16) * 16;
