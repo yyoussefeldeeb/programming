@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include "../include/auth.h"
 #include "../include/encryption.h"
+#include "../include/fileops.h"
 
 #define BUFFER_SIZE 1024
 
@@ -153,28 +154,89 @@ void *handle_client(void *arg)
 
     // Get the secret message from client and decode it
     printf("\n--- Communication Phase ---\n");
-    memset(buffer, 0, BUFFER_SIZE);
-    memset(decrypted_buffer, 0, BUFFER_SIZE);
-    recv_bytes = read(client_socket, buffer, BUFFER_SIZE - 1);
+    
+    // main command loop for this client
+    while (1) {
+        memset(buffer, 0, BUFFER_SIZE);
+        memset(decrypted_buffer, 0, BUFFER_SIZE);
+        recv_bytes = read(client_socket, buffer, BUFFER_SIZE - 1);
 
-    if (recv_bytes > 0) {
-        decrypt_message(buffer, password, decrypted_buffer, recv_bytes);
-        if (recv_bytes < BUFFER_SIZE) {
-            decrypted_buffer[recv_bytes] = '\0';
+        // client disconnected
+        if (recv_bytes <= 0) {
+            printf("%s disconnected from port %d\n", username, port);
+            break;
         }
+
+        // decrypt command
+        decrypt_message(buffer, password, decrypted_buffer, recv_bytes);
+        decrypted_buffer[recv_bytes] = '\0';
         printf("%s: %s\n", username, decrypted_buffer);
+
+        // parse command
+        char command[64] = {0};
+        char arg1[256] = {0};
+        char arg2[256] = {0};
+        char arg3[1024] = {0};
+        
+        int parts = sscanf(decrypted_buffer, "%63s %255s %255s %1023s", command, arg1, arg2, arg3);
+
+        // check permissions
+        if (!check_permission(role, command)) {
+            sprintf(response, "Permission denied: %s not allowed for %s level", command, role);
+        } else {
+            // execute command
+            char *role_dir = get_role_directory(role);
+            
+            // ls command
+            if (strcmp(command, "ls") == 0) {
+                list_files(role_dir, response);
+            }
+            // cat command
+            else if (strcmp(command, "cat") == 0) {
+                if (parts < 2) {
+                    sprintf(response, "Usage: cat <filename>");
+                } else {
+                    read_file_content(role_dir, arg1, response);
+                }
+            }
+            // cp command
+            else if (strcmp(command, "cp") == 0) {
+                if (parts < 3) {
+                    sprintf(response, "Usage: cp <source> <destination>");
+                } else {
+                    copy_file_op(role_dir, arg1, arg2, response);
+                }
+            }
+            // edit command
+            else if (strcmp(command, "edit") == 0) {
+                if (parts < 3) {
+                    sprintf(response, "Usage: edit <filename> <content>");
+                } else {
+                    write_file_op(role_dir, arg1, arg3, response);
+                }
+            }
+            // rm command
+            else if (strcmp(command, "rm") == 0) {
+                if (parts < 2) {
+                    sprintf(response, "Usage: rm <filename>");
+                } else {
+                    delete_file_op(role_dir, arg1, response);
+                }
+            }
+            else {
+                sprintf(response, "Unknown command: %s", command);
+            }
+        }
+
+        // encrypt and send response
+        size_t response_len = strlen(response);
+        size_t padded_len = ((response_len + 15) / 16) * 16;
+
+        memset(encrypted_response, 0, BUFFER_SIZE);
+        encrypt_message(response, password, encrypted_response);
+
+        send(client_socket, encrypted_response, padded_len, 0);
     }
-
-    // Send back a secret message
-    strcpy(response, "Hello from secure server");
-    size_t response_len = strlen(response);
-    // calculate padded length (must be multiple of 16)
-    size_t padded_len = ((response_len + 15) / 16) * 16;
-
-    memset(encrypted_response, 0, BUFFER_SIZE);
-    encrypt_message(response, password, encrypted_response);
-
-    send(client_socket, encrypted_response, padded_len, 0);
 
     // Close this client connection
     close(client_socket);

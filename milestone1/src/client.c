@@ -93,35 +93,62 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    // Send secret message to server
-    printf("\n--- Communication Phase ---\n");
-    printf("Enter your message: ");
-    fgets(message, sizeof(message), stdin);
-    message[strcspn(message, "\n")] = 0; // remove newline
+    // Send commands to server in a loop
+    printf("\n--- Command Phase ---\n");
+    printf("Available commands:\n");
+    printf("  ls              - List files\n");
+    printf("  cat <file>      - Read file\n");
+    printf("  cp <src> <dst>  - Copy file\n");
+    printf("  edit <file> <content> - Edit file\n");
+    printf("  rm <file>       - Delete file\n");
+    printf("  quit            - Exit\n\n");
+
+    char command[BUFFER_SIZE] = {0};
     
-    size_t message_len = strlen(message);
-    // calculate padded length (must be multiple of 16)
-    size_t padded_len = ((message_len + 15) / 16) * 16;
-
-    memset(encrypted_message, 0, BUFFER_SIZE);
-    encrypt_message(message, password, encrypted_message);
-
-    printf("Sending: %s\n", message);
-    send(sock, encrypted_message, padded_len, 0);
-
-    // Get and decode the response from server
-    memset(buffer, 0, BUFFER_SIZE);
-    recv_bytes = read(sock, buffer, BUFFER_SIZE - 1);
-
-    if (recv_bytes > 0) {
-        decrypt_message(buffer, password, decrypted_buffer, recv_bytes);
-        if (recv_bytes < BUFFER_SIZE) {
-            decrypted_buffer[recv_bytes] = '\0';
+    while (1) {
+        printf("> ");
+        memset(command, 0, BUFFER_SIZE);
+        memset(message, 0, BUFFER_SIZE);
+        
+        fgets(command, sizeof(command), stdin);
+        command[strcspn(command, "\n")] = 0; // remove newline
+        
+        // quit command
+        if (strcmp(command, "quit") == 0) {
+            printf("Disconnecting...\n");
+            break;
         }
-        printf("Server: %s\n", decrypted_buffer);
+        
+        // skip empty commands
+        if (strlen(command) == 0) {
+            continue;
+        }
+        
+        // prepare message
+        strcpy(message, command);
+        
+        size_t message_len = strlen(message);
+        size_t padded_len = ((message_len + 15) / 16) * 16;
+
+        memset(encrypted_message, 0, BUFFER_SIZE);
+        encrypt_message(message, password, encrypted_message);
+
+        printf("Sending: %s\n", message);
+        send(sock, encrypted_message, padded_len, 0);
+
+        // Get and decode the response from server
+        memset(buffer, 0, BUFFER_SIZE);
+        memset(decrypted_buffer, 0, BUFFER_SIZE);
+        recv_bytes = read(sock, buffer, BUFFER_SIZE - 1);
+
+        if (recv_bytes > 0) {
+            decrypt_message(buffer, password, decrypted_buffer, recv_bytes);
+            decrypted_buffer[recv_bytes] = '\0';
+            printf("Response:\n%s\n", decrypted_buffer);
+        }
     }
 
-    // Bye bye socket
+    // close socket
     close(sock);
 
     return 0;

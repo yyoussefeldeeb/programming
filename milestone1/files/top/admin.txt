@@ -1,0 +1,4 @@
+ADMIN LEVEL FILE
+Top users can do anything with files.
+This file can be modified, copied, or deleted.
+Full administrative access granted.

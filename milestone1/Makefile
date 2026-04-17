@@ -6,11 +6,11 @@ SRC_DIR = src
 BUILD_DIR = build
 INCLUDE_DIR = include
 
-SOURCES = $(SRC_DIR)/auth.c $(SRC_DIR)/encryption.c
+SOURCES = $(SRC_DIR)/auth.c $(SRC_DIR)/encryption.c $(SRC_DIR)/fileops.c
 SERVER_SRC = $(SRC_DIR)/server.c
 CLIENT_SRC = $(SRC_DIR)/client.c
 
-OBJECTS = $(BUILD_DIR)/auth.o $(BUILD_DIR)/encryption.o
+OBJECTS = $(BUILD_DIR)/auth.o $(BUILD_DIR)/encryption.o $(BUILD_DIR)/fileops.o
 SERVER_OBJ = $(BUILD_DIR)/server.o
 CLIENT_OBJ = $(BUILD_DIR)/client.o
 

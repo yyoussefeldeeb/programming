@@ -1,0 +1,6 @@
+Medium Level Projects:
+- Project A: In Progress
+- Project B: Completed
+- Project C: Planning Phase
+
+Medium users can read, copy, and edit these files.
